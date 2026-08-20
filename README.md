@@ -47,7 +47,9 @@ Script: `scripts/run_daily.sh`
 - Checa saude do OmniRoute (`GET http://localhost:20128/v1/models`)
 - Ativa o venv do projeto
 - Roda `scrapy crawl gmaps_clinicas` para Curitiba/PR
-- Copia o CSV mais recente para `clinicas_curitiba_pr_YYYYMMDD.csv`
+- Salva o CSV em dois lugares:
+  - `Base de Clinicas Odonto/clinicas_curitiba_pr_YYYYMMDD.csv`
+  - `Base de Clinicas Odonto/processadas/clinicas_curitiba_pr_YYYYMMDD_HHMMSS.csv`
 
 Para rodar manualmente:
 ```bash
