@@ -120,12 +120,18 @@ class InstagramClinicasSpider(scrapy.Spider):
             return None
 
     def _extract_handle(self, instagram_raw, site):
+        invalid_handles = {'explore', 'p', 'accounts', 'direct', 'stories', 'reels', 'about', 'blog', 'rsrc.php', 'whatsapp', 'reel'}
+
         if instagram_raw:
             m = re.search(r'(?:instagram\.com/|@)([A-Za-z0-9_.]+)', instagram_raw)
             if m:
-                return m.group(1).strip('.').lower()
+                h = m.group(1).strip('.').lower()
+                if h not in invalid_handles:
+                    return h
             if re.match(r'^[A-Za-z0-9_.]+$', instagram_raw):
-                return instagram_raw.lower()
+                h = instagram_raw.lower()
+                if h not in invalid_handles:
+                    return h
 
         if site:
             # tenta achar link do instagram no site
@@ -134,9 +140,10 @@ class InstagramClinicasSpider(scrapy.Spider):
                 req = urllib.request.Request(site, headers={'User-Agent': 'Mozilla/5.0'})
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     html = resp.read().decode('utf-8', errors='ignore')
-                    m = re.search(r'instagram\.com/([A-Za-z0-9_.]+)', html)
-                    if m:
-                        return m.group(1).strip('/').lower()
+                    for m in re.finditer(r'instagram\.com/([A-Za-z0-9_.]+)', html):
+                        h = m.group(1).strip('/').lower()
+                        if h and h not in invalid_handles:
+                            return h
             except Exception:
                 pass
         return ''

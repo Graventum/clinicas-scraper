@@ -40,20 +40,22 @@ Nome: `{spider_name}_{timestamp}.csv`
 O job roda todo dia as 06h00 UTC (03h00 BRT) via `cron-monitor.sh`.
 
 ```bash
-0 6 * * * cd "/root/Comercial Estructure/clinicas_scraper" && /root/scripts/cron-monitor.sh "clinicas-odonto-daily" bash scripts/run_daily.sh >> /var/log/clinicas-odonto-daily.log 2>&1
+0 6 * * * cd "/root/Comercial Estructure/clinicas_scraper" && /root/scripts/cron-monitor.sh "clinicas-odonto-daily" bash scripts/run_enriched.sh >> /var/log/clinicas-odonto-daily.log 2>&1
 ```
 
-Script: `scripts/run_daily.sh`
+Script: `scripts/run_enriched.sh`
 - Checa saude do OmniRoute (`GET http://localhost:20128/v1/models`)
 - Ativa o venv do projeto
-- Roda `scrapy crawl gmaps_clinicas` para Curitiba/PR
-- Salva o CSV em dois lugares:
+- Roda `gmaps_clinicas` para Curitiba/PR
+- Roda `instagram_clinicas` usando o CSV do GMaps como entrada
+- Consolida tudo em uma unica planilha via `scripts/consolidar_clinicas.py`
+- Salva em:
   - `Base de Clinicas Odonto/clinicas_curitiba_pr_YYYYMMDD.csv`
-  - `Base de Clinicas Odonto/processadas/clinicas_curitiba_pr_YYYYMMDD_HHMMSS.csv`
+  - `Base de Clinicas Odonto/processadas/clinicas_consolidado_curitiba_pr_YYYYMMDD_HHMMSS.csv`
 
 Para rodar manualmente:
 ```bash
-bash "/root/Comercial Estructure/clinicas_scraper/scripts/run_daily.sh"
+bash "/root/Comercial Estructure/clinicas_scraper/scripts/run_enriched.sh"
 ```
 
 ## Aviso
