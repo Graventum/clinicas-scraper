@@ -50,9 +50,17 @@ scrapy crawl gmaps_clinicas \
 LATEST=$(ls -t "$OUTPUT_DIR"/gmaps_clinicas_*.csv 2>/dev/null | head -n 1)
 if [ -n "$LATEST" ]; then
   TODAY=$(date +%Y%m%d)
+  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
   DEST="$OUTPUT_DIR/clinicas_${CIDADE,,}_${ESTADO,,}_${TODAY}.csv"
   cp "$LATEST" "$DEST"
   log "Planilha do dia salva: $DEST"
+
+  # copia tambem para a pasta processadas
+  PROCESSED_DIR="$OUTPUT_DIR/processadas"
+  mkdir -p "$PROCESSED_DIR"
+  PROCESSED_DEST="$PROCESSED_DIR/clinicas_${CIDADE,,}_${ESTADO,,}_${TIMESTAMP}.csv"
+  cp "$LATEST" "$PROCESSED_DEST"
+  log "Planilha processada salva: $PROCESSED_DEST"
 else
   log "WARNING: nenhum CSV gerado pelo spider"
 fi
