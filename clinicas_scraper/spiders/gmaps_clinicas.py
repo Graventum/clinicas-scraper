@@ -157,10 +157,160 @@ class GoogleMapsClinicasSpider(scrapy.Spider):
 
             item['categoria'] = 'Clinica Odontologica'
             item['fonte'] = page.url
+
+            # pilar 1: reputacao e volume
+            reviews = await self._extract_reviews(page)
+            item['qtd_reviews'] = reviews['qtd']
+            item['estrelas'] = reviews['estrelas']
+
+            # pilar 2: infraestrutura
+            fotos = await self._extract_photos(page)
+            item['qtd_fotos'] = fotos['qtd']
+            item['urls_fotos'] = fotos['urls']
+
+            # pilar 3: porte/organizacao
+            item['horario_funcionamento'] = await self._extract_hours(page)
+
+            # pilar 5: alto ticket
+            servicos = await self._extract_services(page)
+            item['especialidades'] = servicos['especialidades']
+            item['servicos'] = servicos['servicos']
+
             return item
         except Exception as e:
             self.logger.warning(f"Erro painel: {e}")
             return None
+
+    async def _extract_reviews(self, page):
+        resultado = {'qtd': '', 'estrelas': ''}
+        try:
+            # estrategia 1: aria-label da estrela
+            estrela = await page.query_selector('span[role="img"][aria-label*="estrela"], span[role="img"][aria-label*="stars"], img[alt*="estrela"]')
+            if estrela:
+                aria = await estrela.get_attribute('aria-label') or ''
+                match = re.search(r'([\d,]+)', aria.replace('.', ','))
+                if match:
+                    resultado['estrelas'] = match.group(1).replace(',', '.')
+
+            # estrategia 2: texto visivel no painel lateral
+            texto = await page.evaluate(r'''() => {
+                const painel = document.querySelector('div[role="main"]') || document.body;
+                return painel.innerText || '';
+            }''')
+
+            if not resultado['estrelas']:
+                # procura "4,5" seguido proximo de avaliacoes
+                m = re.search(r'([\d,]+)\s*\(\s*(\d+)\s*(avaliações|avaliação|reviews|review)', texto, re.IGNORECASE)
+                if m:
+                    resultado['estrelas'] = m.group(1).replace(',', '.')
+                    resultado['qtd'] = m.group(2)
+                else:
+                    # so quantidade de avaliacoes
+                    m2 = re.search(r'(\d+)\s*(avaliações|avaliação|reviews|review)', texto, re.IGNORECASE)
+                    if m2:
+                        resultado['qtd'] = m2.group(1)
+
+            # se estrelas encontrada mas nao qtd
+            if resultado['estrelas'] and not resultado['qtd']:
+                m3 = re.search(r'\(\s*(\d+)\s*(avaliações|avaliação|reviews|review)', texto, re.IGNORECASE)
+                if m3:
+                    resultado['qtd'] = m3.group(1)
+
+            # ultimo fallback: numero logo antes da palavra avaliacoes
+            if not resultado['qtd']:
+                m4 = re.search(r'(\d{1,6})\s*(?:avaliações|avaliação|reviews|review)', texto, re.IGNORECASE)
+                if m4:
+                    resultado['qtd'] = m4.group(1)
+
+        except Exception as e:
+            self.logger.warning(f"Erro reviews: {e}")
+        return resultado
+
+    async def _extract_photos(self, page):
+        resultado = {'qtd': '', 'urls': ''}
+        try:
+            # conta thumbnails visiveis no painel
+            fotos = await page.query_selector_all('div[role="main"] button img, div[role="main"] img')
+            urls = []
+            for f in fotos[:10]:
+                src = await f.get_attribute('src') or ''
+                if src and 'googleusercontent' in src and src not in urls:
+                    urls.append(src)
+            resultado['urls'] = ' | '.join(urls[:5])
+
+            # tenta extrair contagem textual "X fotos"
+            texto = await page.evaluate(r'''() => {
+                const painel = document.querySelector('div[role="main"]') || document.body;
+                return painel.innerText || '';
+            }''')
+            m = re.search(r'(\d+)\s*(fotos|foto)', texto, re.IGNORECASE)
+            if m:
+                resultado['qtd'] = m.group(1)
+            else:
+                resultado['qtd'] = str(len(urls))
+        except Exception as e:
+            self.logger.warning(f"Erro fotos: {e}")
+        return resultado
+
+    async def _extract_hours(self, page):
+        try:
+            # botao de horario
+            btn = await page.query_selector('button[data-item-id="oh"], button[aria-label*="horário"], button[aria-label*="Horário"]')
+            if btn:
+                label = await btn.get_attribute('aria-label') or ''
+                return label.replace('Horário:', '').strip()
+
+            # texto visivel com horarios
+            texto = await page.evaluate(r'''() => {
+                const painel = document.querySelector('div[role="main"]') || document.body;
+                return painel.innerText || '';
+            }''')
+
+            # procura padrao "segunda-feira", "aberto 24 horas", etc
+            linhas = texto.split('\n')
+            horarios = []
+            for i, linha in enumerate(linhas):
+                if re.search(r'(segunda|terça|quarta|quinta|sexta|sábado|domingo|aberto|fechado)', linha, re.IGNORECASE):
+                    horarios.append(linha.strip())
+                    if i + 1 < len(linhas) and re.search(r'\d{1,2}:\d{2}', linhas[i + 1]):
+                        horarios.append(linhas[i + 1].strip())
+            return ' | '.join(horarios[:14])
+        except Exception as e:
+            self.logger.warning(f"Erro horario: {e}")
+            return ''
+
+    async def _extract_services(self, page):
+        resultado = {'especialidades': '', 'servicos': ''}
+        try:
+            texto = await page.evaluate(r'''() => {
+                const painel = document.querySelector('div[role="main"]') || document.body;
+                return painel.innerText || '';
+            }''')
+
+            # termos de alto ticket em odonto
+            termos_alto_ticket = [
+                'implante', 'implantes', 'ortodontia', 'invisalign', 'aparelho invisivel',
+                'lente de contato dental', 'faceta', 'facetas', 'coroa', 'protese',
+                'prótese', 'reabilitacao oral', 'cirurgia', 'periodontia', 'endodontia',
+                'canal', 'clareamento', 'botox', 'preenchimento', 'harmonizacao'
+            ]
+            encontrados = []
+            for termo in termos_alto_ticket:
+                if re.search(rf'\b{re.escape(termo)}\b', texto, re.IGNORECASE):
+                    encontrados.append(termo)
+            resultado['especialidades'] = ' | '.join(encontrados)
+
+            # se houver secao "Sobre" ou "Servicos", tenta pegar lista
+            servicos = []
+            if 'Sobre' in texto:
+                idx = texto.find('Sobre')
+                bloco = texto[idx:idx + 2000]
+                linhas = [l.strip() for l in bloco.split('\n') if l.strip() and len(l.strip()) > 2]
+                servicos = linhas[1:20]
+            resultado['servicos'] = ' | '.join(servicos[:15])
+        except Exception as e:
+            self.logger.warning(f"Erro servicos: {e}")
+        return resultado
 
     async def _find_phone_for_place(self, page, nome):
         try:
